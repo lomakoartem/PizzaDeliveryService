@@ -1,14 +1,15 @@
 package pizzaservice.infrastructure;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.lang.reflect.*;
+import java.util.Arrays;
 
 public class BeanBuilder {
 
     private final Class<?> clazz;
     private ApplicationContext ac;
     private Object bean;
+    private Object beanProxy;
+    private boolean isProxyPresent;
 
     public BeanBuilder(Class<?> clazz, ApplicationContext ac) {
         this.clazz = clazz;
@@ -26,8 +27,49 @@ public class BeanBuilder {
         }
     }
 
-    public void createBeanProxy() {
-        // TODO Auto-generated method stub
+    void createBeanProxy() {
+        Method[] methods = clazz.getMethods();
+        boolean isProxyNeeded = false;
+        for (Method method : methods) {
+            if (method.getAnnotation(Benchmark.class) != null) {
+                isProxyNeeded = true;
+                break;
+            }
+        }
+
+        if (!isProxyNeeded) {
+            return;
+        }
+        isProxyPresent = true;
+        ClassLoader loader = clazz.getClassLoader();
+        Class<?>[] interfaces = clazz.getInterfaces();
+        InvocationHandler h = new DynamicInvocationHandler(bean);
+        Object proxyInstance = Proxy.newProxyInstance(loader, interfaces, h);
+        beanProxy = proxyInstance;
+    }
+
+    static class DynamicInvocationHandler implements InvocationHandler {
+
+        private Object obj;
+
+        public DynamicInvocationHandler(Object obj) {
+            this.obj = obj;
+        }
+
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            Benchmark benchmark = method.getAnnotation(Benchmark.class);
+            if (benchmark == null || !benchmark.active()) {
+                return method.invoke(obj, args);
+            }
+            long startTime = System.nanoTime();
+            Object object = method.invoke(obj, args);
+            long endTime = System.nanoTime();
+            long totalTime = endTime - startTime;
+            System.out.println("Invoked " + method.getName() + " on " + obj.getClass().getSimpleName() + " with args: "
+                    + Arrays.toString(args) + ". Total time: " + totalTime);
+            return object;
+        }
 
     }
 
